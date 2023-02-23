@@ -1,4 +1,4 @@
-$HOME/tgbojvenv/bin/activate
+source $HOME/tgbojvenv/bin/activate
 
 cd $HOME/OJ
 
