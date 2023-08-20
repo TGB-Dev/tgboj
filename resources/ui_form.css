@@ -23,8 +23,12 @@
     width: 10em;
 }
 
-.django-as-table input:not([type='checkbox']) {
+.django-as-table input {
     width: 30em;
+}
+
+.django-as-table input[type=checkbox] {
+    width: fit-content;
 }
 
 .errorlist {

@@ -101,19 +101,7 @@ input {
     }
 
     &[type=checkbox] {
-        appearance: none;
         vertical-align: middle;
-        border: 1px solid $color_primary50;
-        background: $color_primary0;
-        border-radius: 2px;
-        width: 0.95em;
-        height: 0.95em;
-        cursor: pointer;
-
-        &:checked {
-            appearance: auto;
-            accent-color: $highlight_blue;
-        }
     }
 }
 
@@ -163,8 +151,6 @@ textarea:focus {
 // Bootstrap-y tabs
 .ul_tab_a_active {
     color: $color_primary100;
-    // Cover up the bottom border of active tabs with this color
-    background: $color_pageBg;
     cursor: default;
     border: 1px solid $color_primary25;
     border-bottom-color: $color_pageBg;
@@ -241,7 +227,7 @@ textarea:focus {
                 position: relative;
                 display: block;
                 padding: 10px 15px;
-                color: $color_primary66;
+                color: $color_primary50;
                 text-decoration: none;
                 white-space: nowrap;
             }
@@ -363,7 +349,8 @@ ul.pagination {
     font-size: 21px;
     font-weight: 700;
     line-height: 1;
-    color: $color_primary100;
+    color: #000;
+    text-shadow: 0 1px 0 #fff;
     filter: alpha(opacity=20);
     opacity: 0.2;
 }
@@ -374,7 +361,7 @@ a.close {
     line-height: 1;
 
     &:hover {
-        color: $color_primary100;
+        color: black !important;
     }
 }
 
@@ -408,6 +395,15 @@ a.close {
     margin-top: 0.8em;
     padding-top: 0.5em;
     text-align: right;
+}
+
+ul.select2-results__options {
+    color: black;
+}
+
+ul.select2-selection__rendered {
+    padding: 0 5px !important;
+    color: black;
 }
 
 .sidebox h3 {

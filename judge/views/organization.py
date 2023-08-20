@@ -23,7 +23,7 @@ from judge.models import BlogPost, Comment, Contest, Language, Organization, Org
     Problem, Profile
 from judge.tasks import on_new_problem
 from judge.utils.ranker import ranker
-from judge.utils.views import DiggPaginatorMixin, QueryStringSortMixin, TitleMixin, generic_message
+from judge.utils.views import QueryStringSortMixin, TitleMixin, generic_message
 from judge.views.blog import BlogPostCreate, PostListBase
 from judge.views.contests import ContestList, CreateContest
 from judge.views.problem import ProblemCreate, ProblemList
@@ -65,22 +65,6 @@ class OrganizationMixin(object):
         return org.is_admin(self.request.profile)
 
 
-class BaseOrganizationListView(OrganizationMixin, ListView):
-    model = None
-    context_object_name = None
-    slug_url_kwarg = 'slug'
-
-    def get_object(self):
-        return get_object_or_404(Organization, id=self.kwargs.get('pk'))
-
-    def get_context_data(self, **kwargs):
-        return super().get_context_data(organization=self.object, **kwargs)
-
-    def get(self, request, *args, **kwargs):
-        self.object = self.get_object()
-        return super().get(request, *args, **kwargs)
-
-
 class OrganizationDetailView(OrganizationMixin, DetailView):
     def get(self, request, *args, **kwargs):
         self.object = self.get_object()
@@ -101,28 +85,22 @@ class OrganizationList(TitleMixin, ListView):
         return Organization.objects.filter(is_unlisted=False)
 
 
-class OrganizationUsers(QueryStringSortMixin, DiggPaginatorMixin, BaseOrganizationListView):
+class OrganizationUsers(QueryStringSortMixin, OrganizationDetailView):
     template_name = 'organization/users.html'
     all_sorts = frozenset(('points', 'problem_count', 'rating', 'performance_points'))
     default_desc = all_sorts
     default_sort = '-performance_points'
-    paginate_by = 100
-    context_object_name = 'users'
-
-    def get_queryset(self):
-        return self.object.members.filter(is_unlisted=False).order_by(self.order) \
-            .select_related('user', 'display_badge').defer('about', 'user_script', 'notes')
 
     def get_context_data(self, **kwargs):
         context = super(OrganizationUsers, self).get_context_data(**kwargs)
         context['title'] = self.object.name
-        context['users'] = ranker(context['users'])
+        context['users'] = \
+            ranker(self.object.members.filter(is_unlisted=False).order_by(self.order)
+                   .select_related('user', 'display_badge').defer('about', 'user_script', 'notes'))
         context['partial'] = True
         context['is_admin'] = self.can_edit_organization()
         context['kick_url'] = reverse('organization_user_kick', args=[self.object.id, self.object.slug])
-        context['first_page_href'] = '.'
         context.update(self.get_sort_context())
-        context.update(self.get_sort_paginate_context())
         return context
 
 
@@ -234,12 +212,6 @@ class OrganizationRequestBaseView(LoginRequiredMixin, SingleObjectTemplateRespon
             raise PermissionDenied()
         return organization
 
-    def get_requests(self):
-        queryset = self.object.requests.select_related('user__user').defer(
-            'user__about', 'user__notes', 'user__user_script',
-        )
-        return queryset
-
     def get_context_data(self, **kwargs):
         context = super(OrganizationRequestBaseView, self).get_context_data(**kwargs)
         context['title'] = _('Managing join requests for %s') % self.object.name
@@ -261,16 +233,15 @@ class OrganizationRequestView(OrganizationRequestBaseView):
 
     def get(self, request, *args, **kwargs):
         self.object = self.get_object()
-        self.formset = OrganizationRequestFormSet(queryset=self.get_requests())
+        self.formset = OrganizationRequestFormSet(
+            queryset=OrganizationRequest.objects.filter(state='P', organization=self.object),
+        )
         context = self.get_context_data(object=self.object)
         return self.render_to_response(context)
 
-    def get_requests(self):
-        return super().get_requests().filter(state='P')
-
     def post(self, request, *args, **kwargs):
         self.object = organization = self.get_object()
-        self.formset = formset = OrganizationRequestFormSet(request.POST, request.FILES, queryset=self.get_requests())
+        self.formset = formset = OrganizationRequestFormSet(request.POST, request.FILES)
         if formset.is_valid():
             if organization.slots is not None:
                 deleted_set = set(formset.deleted_forms)
@@ -312,7 +283,7 @@ class OrganizationRequestLog(OrganizationRequestBaseView):
 
     def get_context_data(self, **kwargs):
         context = super(OrganizationRequestLog, self).get_context_data(**kwargs)
-        context['requests'] = self.get_requests().filter(state__in=self.states)
+        context['requests'] = self.object.requests.filter(state__in=self.states)
         return context
 
 
@@ -520,29 +491,21 @@ class OrganizationHome(TitleMixin, CustomOrganizationMixin, PostListBase):
                 state='P',
                 organization=self.object).count()
 
-        user = self.request.user
         if context['is_member'] or \
-           user.has_perm('judge.see_organization_problem') or \
-           user.has_perm('judge.edit_all_problem'):
+           self.request.user.has_perm('judge.see_organization_problem') or \
+           self.request.user.has_perm('judge.edit_all_problem'):
             context['new_problems'] = Problem.objects.filter(
                 is_public=True, is_organization_private=True,
                 organizations=self.object) \
                 .order_by('-date', '-id')[:settings.DMOJ_BLOG_NEW_PROBLEM_COUNT]
 
-        see_private_contest = user.has_perm('judge.see_private_contest') or user.has_perm('judge.edit_all_contest')
-        if context['is_member'] or see_private_contest:
-            new_contests = Contest.objects.filter(
+        if context['is_member'] or \
+           self.request.user.has_perm('judge.see_private_contest') or \
+           self.request.user.has_perm('judge.edit_all_contest'):
+            context['new_contests'] = Contest.objects.filter(
                 is_visible=True, is_organization_private=True,
                 organizations=self.object) \
-                .order_by('-end_time', '-id')
-
-            if not see_private_contest:
-                _filter = Q(is_private=False)
-                if user.is_authenticated:
-                    _filter |= Q(private_contestants=user.profile)
-                new_contests = new_contests.filter(_filter)
-
-            context['new_contests'] = new_contests[:settings.DMOJ_BLOG_NEW_PROBLEM_COUNT]
+                .order_by('-end_time', '-id')[:settings.DMOJ_BLOG_NEW_PROBLEM_COUNT]
 
         return context
 
@@ -575,15 +538,15 @@ class ProblemListOrganization(CustomOrganizationMixin, ProblemList):
         if self.request.user.has_perm('judge.see_private_problem'):
             return Q(organizations=self.organization)
 
-        _filter = Q(is_public=True)
+        filter = Q(is_public=True)
 
         # Authors, curators, and testers should always have access, so OR at the very end.
         if self.profile is not None:
-            _filter |= Q(authors=self.profile)
-            _filter |= Q(curators=self.profile)
-            _filter |= Q(testers=self.profile)
+            filter |= Q(authors=self.profile)
+            filter |= Q(curators=self.profile)
+            filter |= Q(testers=self.profile)
 
-        return _filter & Q(organizations=self.organization)
+        return filter & Q(organizations=self.organization)
 
 
 class ContestListOrganization(CustomOrganizationMixin, ContestList):

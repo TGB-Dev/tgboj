@@ -81,13 +81,7 @@
         {{ cell }}
     {% endfor %}
     {% if has_rating %}
-        <td class="rating-column">
-            {% if user.participation_rating %}
-                {% cache 86400 'rating_number' user.participation_rating %}
-                    {{ rating_number(user.participation_rating) }}
-                {% endcache %}
-            {% endif %}
-        </td>
+        <td class="rating-column">{% if user.participation_rating %}{{ rating_number(user.participation_rating) }}{% endif %}</td>
     {% endif %}
 {% endblock %}
 
@@ -99,7 +93,7 @@
     <tr>
         <td colspan={% if is_ICPC_format %}4{% else %}3{% endif %}>Total AC</td>
         {% for problem in problems %}
-            <td class="total-ac" id='{{- contest.get_label_for_problem(loop.index0) }}-total'>{{ total_ac.get(str(problem.id), 0) }}</td>
+            <td class="total-ac" id='{{- contest.get_label_for_problem(loop.index0) }}-total'>0</td>
         {% endfor %}
         {% if has_rating %}
             <td></td>

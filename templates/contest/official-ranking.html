@@ -3,10 +3,14 @@
 {% block users_media %}
     {{ super() }}
     <style>
-        #ranking-table .wrap-name {
+        #users-table .wrap-name {
             display: block;
             max-width: 20em;
             word-wrap: break-word;
         }
     </style>
+{% endblock %}
+
+{% block users_table %}
+    {{ rendered_ranking_table }}
 {% endblock %}

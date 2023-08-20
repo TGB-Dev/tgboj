@@ -11,7 +11,7 @@ a {
     }
 
     &.voted {
-        text-shadow: 0 0 7px $color_primary100, 0 0 15px $color_voted_mark;
+        text-shadow: 0 0 4px $color_primary100, 0 0 9px blue;
     }
 }
 
@@ -144,6 +144,11 @@ a {
         display: flex;
     }
 
+    .gravatar {
+        width: 75px;
+        max-width: 75px;
+    }
+
     .gravatar-mobile {
         display: none;
     }
@@ -159,9 +164,9 @@ a {
     }
 
     @media (max-width: 760px) {
-        img.user-gravatar {
-            display: inline-block;
-            border-radius: 2px;
+        .gravatar {
+            width: 10px;
+            max-width: 10px;
         }
 
         .gravatar-mobile {

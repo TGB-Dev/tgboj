@@ -14,7 +14,6 @@ from django.urls import reverse
 from django.utils.http import is_safe_url
 from django.utils.translation import gettext as _, gettext_lazy
 from django.views.generic import FormView, View
-from django.views.generic.base import ContextMixin
 from django.views.generic.detail import SingleObjectMixin
 
 from judge.forms import TOTPEnableForm, TOTPForm, TwoFactorLoginForm
@@ -226,11 +225,10 @@ class WebAuthnDeleteView(SingleObjectMixin, WebAuthnView):
         return HttpResponse()
 
 
-class TwoFactorLoginView(SuccessURLAllowedHostsMixin, TOTPView, ContextMixin):
+class TwoFactorLoginView(SuccessURLAllowedHostsMixin, TOTPView):
     form_class = TwoFactorLoginForm
     title = gettext_lazy('Perform Two-factor Authentication')
     template_name = 'registration/two_factor_auth.html'
-    extra_context = {'tfa_in_progress': True}
 
     def get_form_kwargs(self):
         result = super().get_form_kwargs()

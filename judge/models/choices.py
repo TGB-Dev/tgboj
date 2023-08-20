@@ -21,7 +21,6 @@ TIMEZONE = make_timezones()
 del make_timezones
 
 ACE_THEMES = (
-    ('auto', _('Follow site theme')),
     ('ambiance', 'Ambiance'),
     ('chaos', 'Chaos'),
     ('chrome', 'Chrome'),

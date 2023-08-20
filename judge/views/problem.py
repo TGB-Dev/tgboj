@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import shutil
 import zipfile
 from datetime import timedelta
 from operator import itemgetter
@@ -31,11 +32,11 @@ from judge.forms import LanguageLimitFormSet, ProblemCloneForm, ProblemEditForm,
     ProposeProblemSolutionFormSet
 from judge.models import ContestSubmission, Judge, Language, Problem, ProblemGroup, \
     ProblemTranslation, ProblemType, RuntimeVersion, Solution, Submission, SubmissionSource
+from judge.pdf_problems import DefaultPdfMaker, HAS_PDF
 from judge.tasks import on_new_problem
 from judge.template_context import misc_config
 from judge.utils.diggpaginator import DiggPaginator
 from judge.utils.opengraph import generate_opengraph
-from judge.utils.pdfoid import PDF_RENDERING_ENABLED, render_pdf
 from judge.utils.problems import hot_problems, user_attempted_ids, \
     user_completed_ids
 from judge.utils.strings import safe_float_or_none, safe_int_or_none
@@ -207,7 +208,7 @@ class ProblemDetail(ProblemMixin, SolvedProblemMixin, CommentedDetailView):
 
         context['available_judges'] = Judge.objects.filter(online=True, problems=self.object)
         context['show_languages'] = self.object.allowed_languages.count() != Language.objects.count()
-        context['has_pdf_render'] = PDF_RENDERING_ENABLED
+        context['has_pdf_render'] = HAS_PDF
         context['completed_problem_ids'] = self.get_completed_problems()
         context['attempted_problems'] = self.get_attempted_problems()
 
@@ -254,7 +255,7 @@ class ProblemPdfView(ProblemMixin, SingleObjectMixin, View):
     languages = set(map(itemgetter(0), settings.LANGUAGES))
 
     def get(self, request, *args, **kwargs):
-        if not PDF_RENDERING_ENABLED:
+        if not HAS_PDF:
             raise Http404()
 
         language = kwargs.get('language', self.request.LANGUAGE_CODE)
@@ -262,47 +263,48 @@ class ProblemPdfView(ProblemMixin, SingleObjectMixin, View):
             raise Http404()
 
         problem = self.get_object()
-        pdf_basename = '%s.%s.pdf' % (problem.code, language)
+        try:
+            trans = problem.translations.get(language=language)
+        except ProblemTranslation.DoesNotExist:
+            trans = None
 
-        def render_problem_pdf():
-            self.logger.info('Rendering PDF in %s: %s', language, problem.code)
+        cache = os.path.join(settings.DMOJ_PDF_PROBLEM_CACHE, '%s.%s.pdf' % (problem.code, language))
 
-            with translation.override(language):
-                try:
-                    trans = problem.translations.get(language=language)
-                except ProblemTranslation.DoesNotExist:
-                    trans = None
+        if not os.path.exists(cache):
+            self.logger.info('Rendering: %s.%s.pdf', problem.code, language)
+            with DefaultPdfMaker() as maker, translation.override(language):
+                problem_name = problem.name if trans is None else trans.name
+                maker.html = get_template('problem/raw.html').render({
+                    'problem': problem,
+                    'problem_name': problem_name,
+                    'description': problem.description if trans is None else trans.description,
+                    'url': request.build_absolute_uri(),
+                    'math_engine': maker.math_engine,
+                }).replace('"//', '"https://').replace("'//", "'https://")
+                maker.title = problem_name
 
-                problem_name = trans.problem_name if trans else problem.name
-                return render_pdf(
-                    html=get_template('problem/raw.html').render({
-                        'problem': problem,
-                        'problem_name': problem_name,
-                        'description': trans.description if trans else problem.description,
-                        'url': request.build_absolute_uri(),
-                    }).replace('"//', '"https://').replace("'//", "'https://"),
-                    title=problem_name,
-                )
+                assets = ['style.css']
+                if maker.math_engine == 'jax':
+                    assets.append('mathjax_config.js')
+                for file in assets:
+                    maker.load(file, os.path.join(settings.DMOJ_RESOURCES, file))
+                maker.make()
+                if not maker.success:
+                    self.logger.error('Failed to render PDF for %s', problem.code)
+                    return HttpResponse(maker.log, status=500, content_type='text/plain')
+                shutil.move(maker.pdffile, cache)
 
         response = HttpResponse()
-        response['Content-Type'] = 'application/pdf'
-        response['Content-Disposition'] = f'inline; filename={pdf_basename}'
 
-        if settings.DMOJ_PDF_PROBLEM_CACHE:
-            pdf_filename = os.path.join(settings.DMOJ_PDF_PROBLEM_CACHE, pdf_basename)
-            if not os.path.exists(pdf_filename):
-                with open(pdf_filename, 'wb') as f:
-                    f.write(render_problem_pdf())
-
-            if settings.DMOJ_PDF_PROBLEM_INTERNAL:
-                url_path = f'{settings.DMOJ_PDF_PROBLEM_INTERNAL}/{pdf_basename}'
-            else:
-                url_path = None
-
-            add_file_response(request, response, url_path, pdf_filename)
+        if hasattr(settings, 'DMOJ_PDF_PROBLEM_INTERNAL'):
+            url_path = '%s/%s.%s.pdf' % (settings.DMOJ_PDF_PROBLEM_INTERNAL, problem.code, language)
         else:
-            response.content = render_problem_pdf()
+            url_path = None
 
+        add_file_response(request, response, url_path, cache)
+
+        response['Content-Type'] = 'application/pdf'
+        response['Content-Disposition'] = 'inline; filename=%s.%s.pdf' % (problem.code, language)
         return response
 
 
@@ -322,8 +324,11 @@ class ProblemList(QueryStringSortMixin, TitleMixin, SolvedProblemMixin, ListView
     def get_paginator(self, queryset, per_page, orphans=0,
                       allow_empty_first_page=True, **kwargs):
         paginator = DiggPaginator(queryset, per_page, body=6, padding=2, orphans=orphans,
-                                  count=queryset.values('pk').count(),
                                   allow_empty_first_page=allow_empty_first_page, **kwargs)
+        # Get the number of pages and then add in this magic.
+        # noinspection PyStatementEffect
+        paginator.num_pages
+
         queryset = queryset.add_i18n_name(self.request.LANGUAGE_CODE)
         sort_key = self.order.lstrip('-')
         if sort_key in self.sql_sort:
@@ -374,14 +379,16 @@ class ProblemList(QueryStringSortMixin, TitleMixin, SolvedProblemMixin, ListView
         return queryset.search(query, queryset.BOOLEAN).extra(order_by=['-relevance'])
 
     def get_filter(self):
-        _filter = Q(is_public=True) & Q(is_organization_private=False)
+        filter = Q(is_public=True) & Q(is_organization_private=False)
         if self.profile is not None:
-            _filter = Problem.q_add_author_curator_tester(_filter, self.profile)
-        return _filter
+            filter |= Q(authors=self.profile)
+            filter |= Q(curators=self.profile)
+            filter |= Q(testers=self.profile)
+        return filter
 
     def get_normal_queryset(self):
-        _filter = self.get_filter()
-        queryset = Problem.objects.filter(_filter).select_related('group').defer('description', 'summary')
+        filter = self.get_filter()
+        queryset = Problem.objects.filter(filter).select_related('group').defer('description', 'summary')
 
         if self.profile is not None and self.hide_solved:
             queryset = queryset.exclude(id__in=Submission.objects.filter(user=self.profile, points=F('problem__points'))
@@ -625,7 +632,7 @@ class ProblemSubmit(LoginRequiredMixin, ProblemMixin, TitleMixin, SingleObjectFo
         form_data = getattr(form, 'cleaned_data', form.initial)
         if 'language' in form_data:
             form.fields['source'].widget.mode = form_data['language'].ace
-        form.fields['source'].widget.theme = self.request.profile.resolved_ace_theme
+        form.fields['source'].widget.theme = self.request.profile.ace_theme
 
         return form
 
