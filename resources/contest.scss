@@ -191,3 +191,110 @@ form.contest-join-pseudotab {
 
     padding: 0 5px;
 }
+
+#ranking-table {
+    font-size: 14px;
+
+    .user-name {
+        min-width: 20em;
+        position: relative;
+    }
+
+    .userinfo a, .user-name a, .user-name form {
+        display: inline-block !important;
+    }
+
+    .rating-column {
+        min-width: 3em;
+    }
+
+    td {
+        height: 2.5em;
+    }
+
+    td:not(.user-name, .personal-info) a:hover {
+        text-decoration: underline;
+    }
+
+    a {
+        display: block;
+    }
+
+    /* Make problem table headers green on hover */
+    th a:hover {
+        color: #0F0;
+    }
+
+    th a, th a:link, th a:visited {
+        color: $color_primary0;
+    }
+
+    .rank {
+        min-width: 2.4em
+    }
+
+    .points {
+        min-width: 2.4em;
+    }
+
+    .disqualified {
+        background-color: $color_contest_ranking_disqualified !important;
+    }
+
+    .point-denominator {
+        border-top: 1px solid $color_primary50;
+        font-size: 0.7em;
+    }
+
+    .start-time {
+        display: none;
+    }
+
+    .personal-info {
+        display: none;
+    }
+
+    .virtual-participation {
+        color: grey;
+        float: right
+    }
+
+    .user-points, .user-points a {
+        color: $color_primary100;
+    }
+}
+
+#org-dropdown-check-list {
+    display: inline-block;
+}
+
+#org-check-list-wrapper {
+    display: none;
+    background: $color_primary0;
+    border: 1px solid gray;
+    padding: 10px;
+
+    right: auto;
+    position: absolute;
+    z-index: 1;
+
+    button {
+        margin-bottom: 5px;
+        margin-left: 5px;
+    }
+
+    #org-check-list {
+        border-bottom: 1px solid gray;
+        color: $color_primary100;
+        text-align: left;
+        font-weight: normal;
+
+        li {
+            list-style: none;
+        }
+    }
+
+    .select2-selection__rendered {
+        width: 260px !important;
+    }
+}

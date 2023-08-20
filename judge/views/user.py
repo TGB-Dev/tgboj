@@ -13,7 +13,6 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.models import Permission, User
 from django.contrib.auth.views import LoginView, PasswordChangeView, PasswordResetView, redirect_to_login
 from django.contrib.contenttypes.models import ContentType
-from django.contrib.sites.shortcuts import get_current_site
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.db.models import Count, F, FilteredRelation, Max, Min, Prefetch, Q
@@ -24,6 +23,7 @@ from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonRespons
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
 from django.utils.formats import date_format
 from django.utils.functional import cached_property
 from django.utils.safestring import mark_safe
@@ -39,8 +39,8 @@ from judge.models import Comment
 from judge.performance_points import get_pp_breakdown
 from judge.ratings import rating_class, rating_progress
 from judge.tasks import prepare_user_data
-from judge.template_context import MiscConfigDict
 from judge.utils.celery import task_status_by_id, task_status_url_by_id
+from judge.utils.infinite_paginator import InfinitePaginationMixin
 from judge.utils.problems import contest_completed_ids, user_completed_ids
 from judge.utils.pwned import PwnedPasswordsValidator
 from judge.utils.ranker import ranker
@@ -130,7 +130,7 @@ class UserPage(TitleMixin, UserMixin, DetailView):
 
         context['hide_solved'] = int(self.hide_solved)
         context['authored'] = self.object.authored_problems.filter(is_public=True, is_organization_private=False) \
-                                  .order_by('code')
+                                  .select_related('group').order_by('code')
         rating = self.object.ratings.order_by('-contest__end_time')[:1]
         context['rating'] = rating[0] if rating else None
 
@@ -287,9 +287,23 @@ class UserCommentPage(CustomUserMixin, DiggPaginatorMixin, ListView):
 
         return context
 
+    @method_decorator(require_POST)
+    def delete_comments(self, request, *args, **kwargs):
+        if not request.user.is_superuser:
+            raise PermissionDenied()
+
+        user_id = User.objects.get(username=kwargs['user']).id
+        user = Profile.objects.get(user=user_id)
+        for comment in Comment.get_newest_visible_comments(viewer=request.user, author=user,
+                                                           batch=2 * self.paginate_by):
+            comment.get_descendants(include_self=True).update(hidden=True)
+        return HttpResponseRedirect(reverse('user_comment', args=(user.user.username,)))
+
     def dispatch(self, request, *args, **kwargs):
         if not self.request.user.is_superuser:
             raise PermissionDenied()
+        if request.method == 'POST':
+            return self.delete_comments(request, *args, **kwargs)
         return super().dispatch(request, *args, **kwargs)
 
 
@@ -486,15 +500,13 @@ def edit_profile(request):
                 form.fields['newsletter'].initial = subscription.subscribed
         form.fields['test_site'].initial = request.user.has_perm('judge.test_site')
 
-    tzmap = settings.TIMEZONE_MAP
     return render(request, 'user/edit-profile.html', {
         'require_staff_2fa': settings.DMOJ_REQUIRE_STAFF_2FA, 'form_user': form_user,
         'form': form, 'title': _('Edit profile'), 'profile': request.profile,
         'can_download_data': bool(settings.DMOJ_USER_DATA_DOWNLOAD),
         'has_math_config': bool(settings.MATHOID_URL),
         'ignore_user_script': True,
-        'TIMEZONE_MAP': tzmap or 'http://momentjs.com/static/img/world.png',
-        'TIMEZONE_BG': settings.TIMEZONE_BG if tzmap else '#4E7CAD',
+        'TIMEZONE_MAP': settings.TIMEZONE_MAP,
     })
 
 
@@ -530,7 +542,7 @@ def generate_scratch_codes(request):
     return JsonResponse({'data': {'codes': profile.generate_scratch_codes()}})
 
 
-class UserList(QueryStringSortMixin, DiggPaginatorMixin, TitleMixin, ListView):
+class UserList(QueryStringSortMixin, InfinitePaginationMixin, DiggPaginatorMixin, TitleMixin, ListView):
     model = Profile
     title = gettext_lazy('Leaderboard')
     context_object_name = 'users'
@@ -538,10 +550,10 @@ class UserList(QueryStringSortMixin, DiggPaginatorMixin, TitleMixin, ListView):
     paginate_by = 100
     all_sorts = frozenset(('points', 'problem_count', 'rating', 'performance_points'))
     default_desc = all_sorts
-    default_sort = '-performance_points'
+    default_sort = '-rating'
 
     def get_queryset(self):
-        return (Profile.objects.filter(is_unlisted=False).order_by(self.order)
+        return (Profile.objects.filter(is_unlisted=False).order_by(self.order, 'id')
                 .prefetch_related(Prefetch('user', queryset=User.objects.only('username', 'first_name')))
                 .prefetch_related(Prefetch('organizations',
                                   queryset=Organization.objects.filter(is_unlisted=False).only('name', 'id', 'slug')))
@@ -576,7 +588,7 @@ class ContribList(QueryStringSortMixin, DiggPaginatorMixin, TitleMixin, ListView
     default_sort = '-contribution_points'
 
     def get_queryset(self):
-        return (Profile.objects.filter(is_unlisted=False).order_by(self.order)
+        return (Profile.objects.filter(is_unlisted=False).order_by(self.order, 'id')
                 .prefetch_related(Prefetch('user', queryset=User.objects.only('username', 'first_name')))
                 .prefetch_related(Prefetch('organizations',
                                   queryset=Organization.objects.filter(is_unlisted=False).only('name', 'id', 'slug')))
@@ -617,9 +629,13 @@ def user_ranking_redirect(request):
     except KeyError:
         raise Http404()
     user = get_object_or_404(Profile, user__username=username)
-    rank = Profile.objects.filter(is_unlisted=False, performance_points__gt=user.performance_points).count()
+    # Assume using MySQL. NULL is considered smaller than any non-NULL value.
+    if user.rating is None:
+        rank = Profile.objects.filter(is_unlisted=False, rating__isnull=False).count()
+    else:
+        rank = Profile.objects.filter(is_unlisted=False, rating__gt=user.rating).count()
     rank += Profile.objects.filter(
-        is_unlisted=False, performance_points__exact=user.performance_points, id__lt=user.id,
+        is_unlisted=False, rating__exact=user.rating, id__lt=user.id,
     ).count()
     page = rank // UserList.paginate_by
     return HttpResponseRedirect('%s%s#!%s' % (reverse('user_list'), '?page=%d' % (page + 1) if page else '', username))
@@ -663,9 +679,8 @@ class CustomPasswordResetView(PasswordResetView):
             return HttpResponse(_('You have sent too many password reset requests. Please try again later.'),
                                 content_type='text/plain', status=429)
 
-        domain = get_current_site(request).domain
         self.extra_email_context = {
-            'misc_config': MiscConfigDict(domain=domain),
+            'misc_config': request.misc_config,
         }
 
         return super().post(request, *args, **kwargs)

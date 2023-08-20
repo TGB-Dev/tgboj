@@ -27,6 +27,7 @@ from judge.highlight_code import highlight_code
 from judge.models import Contest, Language, Organization, Problem, ProblemTranslation, Profile, Submission
 from judge.models.problem import ProblemTestcaseResultAccess, SubmissionSourceAccess
 from judge.utils.infinite_paginator import InfinitePaginationMixin
+from judge.utils.lazy import memo_lazy
 from judge.utils.problem_data import get_problem_testcases_data
 from judge.utils.problems import get_result_data, user_completed_ids, user_editable_ids, user_tester_ids
 from judge.utils.raw_sql import join_sql_subquery, use_straight_join
@@ -339,7 +340,7 @@ def abort_submission(request, submission):
 def filter_submissions_by_visible_problems(queryset, user):
     join_sql_subquery(
         queryset,
-        subquery=str(Problem.get_visible_problems(user).distinct().only('id').query),
+        subquery=str(Problem.get_visible_problems(user).only('id').query),
         params=[],
         join_fields=[('problem_id', 'id')],
         alias='visible_problems',
@@ -406,7 +407,12 @@ class SubmissionsListBase(DiggPaginatorMixin, TitleMixin, ListView):
                                            Q(contest_object__isnull=True))
 
         if self.selected_languages:
-            queryset = queryset.filter(language__in=Language.objects.filter(key__in=self.selected_languages))
+            # MariaDB can't optimize this subquery for some insane, unknown reason,
+            # so we are forcing an eager evaluation to get the IDs right here.
+            # Otherwise, with multiple language filters, MariaDB refuses to use an index
+            # (or runs the subquery for every submission, which is even more horrifying to think about).
+            queryset = queryset.filter(language__in=list(
+                Language.objects.filter(key__in=self.selected_languages).values_list('id', flat=True)))
         if self.selected_statuses:
             queryset = queryset.filter(Q(result__in=self.selected_statuses) | Q(status__in=self.selected_statuses))
         if self.selected_organization:
@@ -445,9 +451,11 @@ class SubmissionsListBase(DiggPaginatorMixin, TitleMixin, ListView):
         context['dynamic_update'] = False
         context['dynamic_contest_id'] = self.in_contest and self.contest.id
         context['show_problem'] = self.show_problem
-        context['completed_problem_ids'] = user_completed_ids(self.request.profile) if authenticated else []
-        context['editable_problem_ids'] = user_editable_ids(self.request.profile) if authenticated else []
-        context['tester_problem_ids'] = user_tester_ids(self.request.profile) if authenticated else []
+
+        profile = self.request.profile
+        context['completed_problem_ids'] = memo_lazy(lambda: user_completed_ids(profile), set) if authenticated else []
+        context['editable_problem_ids'] = memo_lazy(lambda: user_editable_ids(profile), set) if authenticated else []
+        context['tester_problem_ids'] = memo_lazy(lambda: user_tester_ids(profile), set) if authenticated else []
 
         context['all_languages'] = Language.objects.all().values_list('key', 'name')
         context['selected_languages'] = self.selected_languages
