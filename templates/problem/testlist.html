@@ -1,0 +1,29 @@
+{% block testlist %}
+    <div class="testlist">
+        {% for test in testlist %}
+            <div height="200px">
+                <h3>Test {{ loop.index }} </h3>
+                {% if test.inp %}
+                    <details open>
+                        <summary>Input</summary>
+                        <p>{{ test.inp }}</p>
+                    </details>
+                {% endif %}
+
+                {% if test.out %}
+                    <details open>
+                        <summary>Output</summary>
+                        {{ test.out }}
+                    </details>
+                {% endif %}
+
+                {% if test.note %}
+                    <details open>
+                        <summary>Note</summary>
+                        {{ test.note }}
+                    </details>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endblock %}
