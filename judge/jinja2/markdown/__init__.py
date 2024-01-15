@@ -118,6 +118,7 @@ def markdown(text, style, math_engine=None, lazy_load=False, strip_paragraphs=Fa
         extras.append('nofollow')
 
     bleach_params = styles.get('bleach', {})
+    bleach_params['attributes']['details'] = ['open']
 
     post_processors = []
     if styles.get('use_camo', False) and camo_client is not None:
