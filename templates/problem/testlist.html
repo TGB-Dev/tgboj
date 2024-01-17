@@ -8,7 +8,7 @@
         --arrow-details-icon: url('/static/icons/test-arrow-icon.svg');
         --input-color: 68, 138, 255;
         --output-color: 0, 200, 83;
-        --note-color: 237, 197, 49;
+        --note-color: 164, 126, 27;
     }
 
     details {
@@ -98,21 +98,23 @@
 
     .test, #testlist {
         display: flex;
-        gap: 5px;
+        gap: 20px;
         flex-direction: column;
         padding: 0;
     }
 
     .test {
-        margin: 0 5px 5px 5px;
-    }
-
-    #testlist {
         border: 1px solid rgb(var(--input-color));
         border-radius: 5px;
+        padding-bottom: 5px;
+        gap: 5px;
     }
 
-    .test-note dd, .test-inp code, .test-out code {
+    .test details {
+        margin: 0 5px;
+    }
+
+    .test-note div, .test-inp code, .test-out code {
         padding: 10px;
         margin: 0;
         background: #fff;
@@ -126,8 +128,8 @@
     </style>
     <div id="testlist">
         {% for test in testlist %}
-            <div class="test-header">Test {{ loop.index }} </div>
             <div class="test">
+                <div class="test-header">Test {{ loop.index }} </div>
                 {% if test.inp %}
                     <details class="test-inp" open>
                         <summary>Input</summary>
@@ -145,7 +147,7 @@
                 {% if test.note %}
                     <details class="test-note" open>
                         <summary>Note</summary>
-                        <dd>{{ test.note }}</dd>
+                        <div>{{ test.note }}</div>
                     </details>
                 {% endif %}
             </div>
