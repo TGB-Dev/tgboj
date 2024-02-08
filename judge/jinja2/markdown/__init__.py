@@ -135,7 +135,7 @@ def markdown(text, style, math_engine=None, lazy_load=False, strip_paragraphs=Fa
         result = markdown2.markdown(str(soup), safe_mode=safe_mode, extras=extras)
 
         testlist_rendered = render_to_string('problem/testlist.html', testlist_to_dict(testlist))
-        result = result.replace('\n<p>testlist-placeholder</p>\n', testlist_rendered)
+        result = result.replace('<p>testlist-placeholder</p>', testlist_rendered)
     else:
         result = markdown2.markdown(text, safe_mode=safe_mode, extras=extras)
 
