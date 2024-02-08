@@ -6,7 +6,9 @@ from urllib.parse import urlparse
 import markdown2
 from bleach.css_sanitizer import CSSSanitizer
 from bleach.sanitizer import Cleaner
+from bs4 import BeautifulSoup
 from django.conf import settings
+from django.template.loader import render_to_string
 from lxml import html
 from lxml.etree import ParserError, XMLSyntaxError
 from markupsafe import Markup
@@ -17,6 +19,7 @@ from judge.utils.camo import client as camo_client
 from judge.utils.texoid import TEXOID_ENABLED, TexoidRenderer
 from .bleach_whitelist import all_styles, mathml_attrs, mathml_tags
 from .. import registry
+
 
 logger = logging.getLogger('judge.html')
 
@@ -88,6 +91,20 @@ def add_table_class(text):
     return text.replace(r'<table>', r'<table class="table">')
 
 
+def testlist_to_dict(soup: BeautifulSoup) -> dict:
+    def format_text(text: str) -> str:
+        return text.strip()
+    result = {'testlist': []}
+    for test in soup.find_all('test'):
+        result['testlist'].append({
+            'inp': format_text(test.inp.text) if test.inp else '',
+            'out': format_text(test.out.text) if test.out else '',
+            'note': format_text(test.note.text) if test.note else '',
+        })
+
+    return result
+
+
 @registry.filter
 def markdown(text, style, math_engine=None, lazy_load=False, strip_paragraphs=False):
     styles = settings.MARKDOWN_STYLES.get(style, settings.MARKDOWN_DEFAULT_STYLE)
@@ -101,6 +118,8 @@ def markdown(text, style, math_engine=None, lazy_load=False, strip_paragraphs=Fa
         extras.append('nofollow')
 
     bleach_params = styles.get('bleach', {})
+    if 'attributes' in bleach_params:
+        bleach_params['attributes']['details'] = ['open']
 
     post_processors = []
     if styles.get('use_camo', False) and camo_client is not None:
@@ -108,7 +127,17 @@ def markdown(text, style, math_engine=None, lazy_load=False, strip_paragraphs=Fa
     if lazy_load:
         post_processors.append(lazy_load_processor)
 
-    result = markdown2.markdown(text, safe_mode=safe_mode, extras=extras)
+    soup = BeautifulSoup(text, 'html.parser')
+    if soup.testlist is not None:
+        testlist = soup.testlist
+        soup.testlist.replace_with('\n\ntestlist-placeholder\n\n')
+
+        result = markdown2.markdown(str(soup), safe_mode=safe_mode, extras=extras)
+
+        testlist_rendered = render_to_string('problem/testlist.html', testlist_to_dict(testlist))
+        result = result.replace('\n<p>testlist-placeholder</p>\n', testlist_rendered)
+    else:
+        result = markdown2.markdown(text, safe_mode=safe_mode, extras=extras)
 
     result = add_table_class(result)
     result = inc_header(result, 2)

@@ -1,0 +1,155 @@
+{% block testlist %}
+    <style>
+    #testlist {
+        --test-icon: url('/static/icons/test-icon.svg');
+        --input-details-icon: url('/static/icons/test-input-icon.svg');
+        --output-details-icon: url('/static/icons/test-output-icon.svg');
+        --note-details-icon: url('/static/icons/test-note-icon.svg');
+        --arrow-details-icon: url('/static/icons/test-arrow-icon.svg');
+        --input-color: 68, 138, 255;
+        --output-color: 0, 200, 83;
+        --note-color: 164, 126, 27;
+    }
+
+    details {
+        padding: 0;
+    }
+
+    .test-header, .test-inp summary {
+        background-color: rgba(var(--input-color), .15);
+    }
+
+    .test-inp {
+        border: 1px solid rgb(var(--input-color));
+    }
+
+    .test-out summary {
+        background-color: rgba(var(--output-color), .15);
+    }
+
+    .test-out {
+        border: 1px solid rgb(var(--output-color));
+    }
+
+    .test-note summary {
+        background-color: rgba(var(--note-color), .05);
+    }
+
+    .test-note {
+        border: 1px solid rgb(var(--note-color));
+    }
+
+    .test-header, details summary {
+        padding: 5px !important;
+        display: block;
+        margin: 0;
+        position: relative;
+        font-weight: bold;
+    }
+
+    details summary::before, details summary::after, .test-header::before {
+        display: inline-block;
+        content: "";
+        height: 1rem;
+        width: 1rem;
+        margin: auto 5px;
+        mask-size: cover;
+    }
+
+    .test-inp summary::before {
+        mask-image: var(--input-details-icon);
+        -webkit-mask-image: var(--input-details-icon);
+        background-color: rgb(var(--input-color));
+    }
+
+    .test-out summary::before {
+        mask-image: var(--output-details-icon);
+        --webkit-mask-image: var(--output-details-icon);
+        background-color: rgb(var(--output-color));
+    }
+
+    .test-note summary::before {
+        mask-image: var(--note-details-icon);
+        --webkit-mask-image: var(--note-details-icon);
+        background-color: rgb(var(--note-color));
+    }
+
+    .test-header::before {
+        mask-image: var(--test-icon);
+        --webkit-mask-image: var(--test-icon);
+        background-color: rgb(var(--input-color));
+    }
+
+    details summary::after {
+        mask-image: var(--arrow-details-icon);
+        --webkit-mask-image: var(--arrow-details-icon);
+        background: black;
+        position: absolute;
+        right: 0.4rem;
+        top: 0.625rem;
+        height: 0.7rem !important;
+        width: 0.7rem !important;
+        transition: linear .25s;
+    }
+
+    details[open] summary::after {
+        transform: rotate(-90deg);
+    }
+
+    .test, #testlist {
+        display: flex;
+        gap: 20px;
+        flex-direction: column;
+        padding: 0;
+    }
+
+    .test {
+        border: 1px solid rgb(var(--input-color));
+        border-radius: 5px;
+        padding-bottom: 5px;
+        gap: 5px;
+    }
+
+    .test details {
+        margin: 0 5px;
+    }
+
+    .test-note div, .test-inp code, .test-out code {
+        padding: 10px;
+        margin: 0;
+    }
+
+    .test-inp code, .test-out code {
+        display: block;
+        white-space: pre-line;
+        border: 0;
+    }
+    </style>
+    <div id="testlist">
+        {% for test in testlist %}
+            <div class="test">
+                <div class="test-header">Test {{ loop.index }} </div>
+                {% if test.inp %}
+                    <details class="test-inp" open>
+                        <summary>Input</summary>
+                        <code>{{ test.inp }}</code>
+                    </details>
+                {% endif %}
+
+                {% if test.out %}
+                    <details class="test-out" open>
+                        <summary>Output</summary>
+                        <code>{{ test.out }}</code>
+                    </details>
+                {% endif %}
+
+                {% if test.note %}
+                    <details class="test-note" open>
+                        <summary>Note</summary>
+                        <div>{{ test.note }}</div>
+                    </details>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+{% endblock %}
