@@ -15,6 +15,15 @@
         padding: 0;
     }
 
+    pre {
+        margin: 0!important;
+        border: none!important;
+    }
+
+    .copy-clipboard {
+        margin: 0!important;
+    }
+
     .test-header, .test-inp summary {
         background-color: rgba(var(--input-color), .15);
     }
@@ -132,14 +141,14 @@
                 {% if test.inp %}
                     <details class="test-inp" open>
                         <summary>Input</summary>
-                        <code>{{ test.inp }}</code>
+                        <pre><code>{{ test.inp }}</code></pre>
                     </details>
                 {% endif %}
 
                 {% if test.out %}
                     <details class="test-out" open>
                         <summary>Output</summary>
-                        <code>{{ test.out }}</code>
+                        <pre><code>{{ test.out }}</code></pre>
                     </details>
                 {% endif %}
 
