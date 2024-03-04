@@ -99,7 +99,7 @@ def testlist_to_dict(soup: BeautifulSoup) -> dict:
         result['testlist'].append({
             'inp': format_text(test.inp.text) if test.inp else '',
             'out': format_text(test.out.text) if test.out else '',
-            'note': format_text(test.note.text) if test.note else '',
+            'note': markdown(format_text(test.note.text), style='problem', math_engine='jax') if test.note else '',
         })
 
     return result
